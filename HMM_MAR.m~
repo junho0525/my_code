@@ -1,0 +1,821 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% HMM-MAR for HCP Resting State MEG                                       %
+%                                                                         %
+% This code is based on https://github.com/OHBA-analysis/HMM-MAR/blob/master/examples/NatComms2018_fullpipeline.m         %
+%                                                                         %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Finally edited                                                          %
+%     2018.06.26 16:17 - By Junho Son                                     %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% 
+addpath('/home/kuro/Codes/M_code/my_code');
+addpath(genpath('/home/kuro/matlabwork/OHBA'));
+mPath='/projects1/HCPMEG';
+megDirInfo = dir(mPath);
+subject = [];
+for i=1:length(megDirInfo)
+    if ~isempty(strfind(megDirInfo(i).name, 'MEG')) % if subject folder is '[HCP data path]/[subject id]_MEG'
+        subject(end+1).id = strtok(megDirInfo(i).name,'_');
+        subject(end).dir = megDirInfo(i).name;
+    elseif ~isempty(str2num(megDirInfo(i).name)) % if subject folder is '[HCP data path]/[subject id]'
+        subject(end+1).id = megDirInfo(i).name;
+        subject(end).dir = megDirInfo(i).name;
+    end
+end
+clear megDirInfo;
+for i =1:length(subject)
+    subjDirInfo = dir(fullfile(mPath,subject(i).dir));
+    subject(i).anatomy = [];
+    subject(i).Restin = [];
+    subject(i).Wrkmem = [];
+    subject(i).StoryM = [];
+    subject(i).Motort = [];
+    for j =1:length(subjDirInfo)
+       if ~isempty(strfind(subjDirInfo(j).name, 'anatomy'))
+           subject(i).anatomy = 1; 
+       end
+       if ~isempty(strfind(subjDirInfo(j).name, 'Restin_preproc'))
+           tempDirInfo = [];
+           tempDirInfo = dir(fullfile(mPath, subject(i).dir,subjDirInfo(j).name,subject(i).id, 'MEG/Restin/rmegpreproc'));
+           for k = 1:length(tempDirInfo)
+               sessionNum =strsplit(strtok(tempDirInfo(k).name,'-'),'_MEG_');
+               if length(sessionNum)>1&&~isempty(str2num(sessionNum{2}))
+                   subject(i).Restin(end+1) = str2num(sessionNum{2}); 
+               end
+           end
+           subject(i).Restin =unique(subject(i).Restin); 
+       end
+       if ~isempty(strfind(subjDirInfo(j).name, 'Wrkmem_preproc'))
+           tempDirInfo = [];
+           tempDirInfo = dir(fullfile(mPath, subject(i).dir,subjDirInfo(j).name,subject(i).id, 'MEG/Wrkmem/tmegpreproc'));
+           for k = 1:length(tempDirInfo)
+               sessionNum =strsplit(strtok(tempDirInfo(k).name,'-'),'_MEG_');
+               if length(sessionNum)>1&&~isempty(str2num(sessionNum{2}))
+                   subject(i).Wrkmem(end+1) = str2num(sessionNum{2}); 
+               end
+           end
+           subject(i).Wrkmem =unique(subject(i).Wrkmem);
+       end
+       if ~isempty(strfind(subjDirInfo(j).name, 'StoryM_preproc'))
+           tempDirInfo = [];
+           tempDirInfo = dir(fullfile(mPath, subject(i).dir,subjDirInfo(j).name,subject(i).id, 'MEG/StoryM/tmegpreproc'));
+           for k = 1:length(tempDirInfo)
+               sessionNum =strsplit(strtok(tempDirInfo(k).name,'-'),'_MEG_');
+               if length(sessionNum)>1&&~isempty(str2num(sessionNum{2}))
+                   subject(i).StoryM(end+1) = str2num(sessionNum{2}); 
+               end
+           end
+           subject(i).StoryM =unique(subject(i).StoryM);
+       end
+       if ~isempty(strfind(subjDirInfo(j).name, 'Motort_preproc'))
+           tempDirInfo = [];
+           tempDirInfo = dir(fullfile(mPath, subject(i).dir,subjDirInfo(j).name,subject(i).id, 'MEG/Motort/tmegpreproc'));
+           for k = 1:length(tempDirInfo)
+               sessionNum =strsplit(strtok(tempDirInfo(k).name,'-'),'_MEG_');
+               if length(sessionNum)>1&&~isempty(str2num(sessionNum{2}))
+                   subject(i).Motort(end+1) = str2num(sessionNum{2}); 
+               end
+           end
+           subject(i).Motort =unique(subject(i).Motort);
+       end
+    end
+end
+clear tempDirInfo subjDirInfo subDirInfo sessionNum i j k;
+
+workingDir = '/projects1/MEGResult/HMM_MAR';
+
+%% load
+cd(workingDir);
+use_my_library('ft',0);
+use_my_library('spm',1);
+load ('/projects1/HCPMEG/100307_MEG/100307_MEG_Restin_preproc/100307/MEG/Restin/rmegpreproc/100307_MEG_3-Restin_rmegpreproc.mat');
+load ('/projects1/HCPMEG/100307_MEG/100307_MEG_anatomy/100307/MEG/anatomy/100307_MEG_anatomy_headmodel');
+load ('/projects1/HCPMEG/100307_MEG/100307_MEG_anatomy/100307/MEG/anatomy/100307_MEG_anatomy_sourcemodel_2d');
+
+% data.trial(2:end)= [];
+% data.time(2:end)= [];
+% data.trialinfo(2:end,:)=[];
+% D = spm_eeg_ft2spm(fieldtripData, fullfile(workingDir, 'spm_HMM_MAR_test'));
+% D = spm_eeg_load('spm_100307_3_HMM_MAR');
+%% Downsample data
+if data.fsample>250
+    cfg = [];
+    cfg.resamplefs = 200;
+    cfg.detrend = 'yes';
+    cfg.demean = 'yes';
+    data = ft_resampledata(cfg, data);
+end
+%% Source localize using OHBA Beamformer LCMV
+cfg = [];
+cfg.headmodel = headmodel;
+cfg.sourcemodel = sourcemodel2d;
+
+[source ,weights, leadfield,cfg]= bf_inverse_lcmv_jhs(data,cfg);
+
+% Plot Source on Mesh
+for i = 1:size(source, 3)
+    source_pow.pow(:,i) = sum(abs(fft(source(:,:,i)')),1)';
+end
+source_pow.pow = sum(source_pow.pow,2);
+source_pow.pos = sourcemodel2d.pos;
+source_pow.tri = sourcemodel2d.tri;
+source_pow.inside = leadfield.inside;
+source_pow.mask = (1+tanh(2.*(source_pow.pow./max(source_pow.pow(:))-0.5)))./2; 
+
+% Source plot
+cfg = [];
+cfg.method        = 'surface';
+cfg.funparameter  = 'pow';
+cfg.maskparameter = 'mask';
+cfg.funcolorlim   = [-.3 .3];
+cfg.funcolormap   = 'jet';
+cfg.colorbar      = 'no';
+ft_sourceplot(cfg, source_pow);
+view([-90 30]);
+light('style','infinite','position',[0 -200 200]);
+
+%% Simulation
+% Show selected source position
+target = 3;
+neighbors = find_neighbors_jhs(target, sourcemodel2d.tri,2);
+
+bnd.pnt = sourcemodel2d.pos;
+bnd.tri = sourcemodel2d.tri;
+
+source_sim = zeros(8004,1);
+source_sim(neighbors) = 10;
+
+ft_plot_mesh(bnd, 'vertexcolor', source_sim);
+light;
+% Simulation Data, Source Localize Using LCMV, and Source Plot
+cfg = [];
+cfg.vol = headmodel;
+cfg.grad = data.grad;
+cfg.fsample = data.fsample;
+cfg.triallength = 2;
+cfg.dip.pos = leadfield.pos(target,:);    % you can vary the location, here the dipole is along the z-axis
+cfg.dip.mom = [1 0 0]';   % the dipole points along the x-axis
+cfg.relnoise = 0.1;
+cfg.ntrials = 147;
+cfg.channel = data.label;
+y0 = ft_dipolesimulation(cfg);
+
+cfg = [];
+cfg.headmodel = headmodel;
+cfg.sourcemodel = sourcemodel2d;
+
+[source_sim ,weights_sim, leadfield_sim]= bf_inverse_lcmv_jhs(y0,cfg);
+
+for i = 1:size(source_sim, 3)
+    source_pow.pow(:,i) = sum(abs(fft(source_sim(:,:,i)')),1)';
+end
+source_pow.pow = sum(source_pow.pow,2);
+source_pow.pos = sourcemodel2d.pos;
+source_pow.tri = sourcemodel2d.tri;
+source_pow.inside = leadfield_sim.inside;
+source_pow.mask = (1+tanh(2.*(source_pow.pow./max(source_pow.pow(:))-0.5)))./2; 
+
+% Source plot
+cfg = [];
+cfg.method        = 'surface';
+cfg.funparameter  = 'pow';
+cfg.maskparameter = 'mask';
+cfg.funcolorlim   = [-.3 .3];
+cfg.funcolormap   = 'jet';
+cfg.colorbar      = 'no';
+ft_sourceplot(cfg, source_pow);
+view([-90 30]);
+light('style','infinite','position',[0 -200 200]);
+
+%% Source Localizing using fieldtrip beamformer lcmv
+use_my_library('spm',0);
+use_my_library('ft',1);
+lcmv.lambda = '10%';
+lcmv.fixedori = 'yes';
+lcmv.porjectnoise = 'yes';
+lcmv.keepleadfield = 'yes';
+lcmvparam = ft_cfg2keyval(lcmv);
+
+cfg = [];
+cfg.headmodel = headmodel;
+cfg.grid = sourcemodel2d;
+cfg.grad = data.grad;
+cfg.channel = data.label;
+
+data.leadfield = ft_prepare_leadfield(cfg);
+
+source = beamformer_lcmv_jhs(sourcemodel2d, data.grad, headmodel, data, eye(length(data.label),length(data.label)), lcmvparam{:})
+% Plot Source on Mesh
+source_pow.pow = source{1}.pow;
+source_pow.pos = sourcemodel2d.pos;
+source_pow.tri = sourcemodel2d.tri;
+source_pow.inside = source{1}.inside;
+source_pow.mask = (1+tanh(2.*(source_pow.pow./max(source_pow.pow(:))-0.5)))./2; 
+
+% Source plot
+cfg = [];
+cfg.method        = 'surface';
+cfg.funparameter  = 'pow';
+cfg.maskparameter = 'mask';
+cfg.funcolorlim   = [-.3 .3];
+cfg.funcolormap   = 'jet';
+cfg.colorbar      = 'no';
+ft_sourceplot(cfg, source_pow);
+view([-90 30]);
+light('style','infinite','position',[0 -200 200]);
+
+%% Simulation of fieldtrip beamformer lcmv
+% Use same source position used above.
+% Simulation Data, Source Localize Using LCMV, and Source Plot
+use_my_library('spm',0);
+use_my_library('ft',1);
+
+cfg = [];
+cfg.headmodel = headmodel;
+cfg.grid = sourcemodel2d;
+cfg.grad = y0.grad;
+cfg.channel = y0.label;
+
+y0.leadfield = ft_prepare_leadfield(cfg);
+
+source_sim = beamformer_lcmv_jhs(sourcemodel2d, y0.grad, headmodel, y0, eye(length(y0.label),length(y0.label)), lcmvparam{:})
+
+% [source_sim ,weights_sim, leadfield_sim]= bf_inverse_lcmv_jhs(y0,cfg);
+% Plot Source on Mesh
+source_pow = [];
+source_pow.pow = source_sim{1}.pow;
+source_pow.pos = sourcemodel2d.pos;
+source_pow.tri = sourcemodel2d.tri;
+source_pow.inside = source_sim{1}.inside;
+source_pow.mask = (1+tanh(2.*(source_pow.pow./max(source_pow.pow(:))-0.5)))./2; 
+
+% Source plot
+cfg = [];
+cfg.method        = 'surface';
+cfg.funparameter  = 'pow';
+cfg.maskparameter = 'mask';
+cfg.funcolorlim   = [-.3 .3];
+cfg.funcolormap   = 'jet';
+cfg.colorbar      = 'no';
+ft_sourceplot(cfg, source_pow);
+view([-90 30]);
+light('style','infinite','position',[0 -200 200]);
+
+source_pow_des = ft_sourcedescriptives([], source_pow); % to get the neural-activity-index
+% plot the neural activity index (power/noise)
+cfg               = [];
+cfg.method        = 'surface';
+cfg.funparameter  = 'nai';
+cfg.maskparameter = cfg.funparameter;
+cfg.funcolorlim   = [0 8]; % [0.0 8]
+cfg.opacitylim    = [1 8]; 
+cfg.opacitymap    = 'rampup';  
+cfg.funcolormap   = 'jet';
+cfg.colorbar      = 'yes';
+ft_sourceplot(cfg, source_pow_des);
+view([-90 30]);
+light;
+
+
+%% Source Localizeing using frequency domain source localization methods(pcc)
+%% Frequency Analysis
+cfg = [];
+cfg.headmodel = headmodel;
+cfg.grid = sourcemodel2d;
+cfg.grad = data.grad;
+cfg.channel = data.label;
+
+leadfield = ft_prepare_leadfield(cfg);
+
+cfg = [];
+cfg.method = 'mtmfft';
+cfg.output = 'fourier';
+cfg.keeptrials = 'yes';
+cfg.tapsmofrq = 1;
+cfg.fio = 10;
+%cfg.foilim = [1 30]; % set frequencies of interest as array
+spectdata = ft_freqanalysis(cfg, data);
+
+cfg                   = [];
+cfg.frequency         = 10;
+cfg.method            = 'dics';
+cfg.grid              = leadfield;
+cfg.headmodel         = headmodel;
+cfg.dics.lambda       = '10%';
+cfg.dics.projectnoise = 'yes';
+cfg.dics.keepfilter   = 'yes';
+source = ft_sourceanalysis(cfg, spectdata);
+source = ft_sourcedescriptives([], source); % to get the neural-activity-index
+
+% plot the neural activity index (power/noise)
+cfg               = [];
+cfg.method        = 'surface';
+cfg.funparameter  = 'nai';
+cfg.maskparameter = cfg.funparameter;
+cfg.funcolorlim   = 'auto'; % [0.0 8]
+cfg.opacitylim    = [1 8]; 
+cfg.opacitymap    = 'rampup';  
+cfg.funcolormap   = 'jet';
+cfg.colorbar      = 'yes';
+ft_sourceplot(cfg, source);
+
+%%
+cfg                   = [];
+cfg.method            = 'lcmv';
+cfg.grid              = leadfield;
+cfg.headmodel         = headmodel;
+cfg.lcmv.lambda = '10%';
+cfg.lcmv.fixedori = 'yes';
+cfg.lcmv.projectnoise = 'yes';
+cfg.lcmv.keepleadfield = 'yes';
+cfg.singletrial = 'yes'
+source_lcmv = ft_sourceanalysis(cfg, data);
+source_lcmv = ft_sourcedescriptives([], source_lcmv);
+
+% plot the neural activity index (power/noise)
+cfg               = [];
+cfg.method        = 'surface';
+cfg.funparameter  = 'nai';
+cfg.maskparameter = cfg.funparameter;
+cfg.funcolorlim   = 'auto'; % [0.0 8]
+cfg.opacitylim    = [3 8];
+cfg.opacitymap    = 'rampup';  
+cfg.funcolormap   = 'jet';
+cfg.colorbar      = 'yes';
+
+source_lcmv_rescale = source_lcmv;
+source_lcmv_rescale.avg.nai = 10.^(log10(source_lcmv_rescale.avg.nai)-floor(log10(source_lcmv_rescale.avg.nai)));
+
+ft_sourceplot(cfg, source_lcmv_rescale);
+
+% Show selected source position
+target = 3;
+neighbors = find_neighbors_jhs(target, sourcemodel2d.tri,2);
+
+bnd.pnt = sourcemodel2d.pos;
+bnd.tri = sourcemodel2d.tri;
+
+source_sim = zeros(8004,1);
+source_sim(neighbors) = 10;
+
+ft_plot_mesh(bnd, 'vertexcolor', source_sim);
+light;
+% Simulation Data, Source Localize Using LCMV, and Source Plot
+cfg = [];
+cfg.vol = headmodel;
+cfg.grad = data.grad;
+cfg.fsample = data.fsample;
+cfg.triallength = 2;
+cfg.dip.pos = leadfield.pos(target,:);    % you can vary the location, here the dipole is along the z-axis
+cfg.dip.mom = [1 0 0]';   % the dipole points along the x-axis
+cfg.dip.amplitude = [10]
+cfg.relnoise = 0.1;
+cfg.ntrials = 147;
+cfg.channel = data.label;
+y0 = ft_dipolesimulation(cfg);
+
+cfg                   = [];
+cfg.method            = 'lcmv';
+cfg.grid              = leadfield;
+cfg.headmodel         = headmodel;
+cfg.lcmv.lambda = '10%';
+cfg.lcmv.fixedori = 'yes';
+cfg.lcmv.projectnoise = 'yes';
+cfg.lcmv.keepleadfield = 'yes';
+cfg.singletrial = 'yes'
+source_lcmv_sim = ft_sourceanalysis(cfg, y0);
+source_lcmv_sim = ft_sourcedescriptives([], source_lcmv_sim);
+
+source_lcmv_sim = source_lcmv_sim;
+source_lcmv_sim.avg.nai = 10.^(log10(source_lcmv_sim.avg.nai)-floor(log10(source_lcmv_sim.avg.nai)));
+
+% plot the neural activity index (power/noise)
+cfg               = [];
+cfg.method        = 'surface';
+cfg.funparameter  = 'nai';
+cfg.maskparameter = cfg.funparameter;
+cfg.funcolorlim   = 'auto'; % [0.0 8]
+cfg.opacitylim    = [3 8];
+cfg.opacitymap    = 'rampup';  
+cfg.funcolormap   = 'jet';
+cfg.colorbar      = 'yes';
+ft_sourceplot(cfg, source_lcmv_sim);
+%% Simulation
+t = data.time{1};
+signal = 10*sin(2*pi*10*t)+(rand(size(t))-0.5)*4;
+target = 3;
+neighbors = find_neighbors_jhs(target, sourcemodel2d.tri,2);
+
+bnd.pnt = sourcemodel2d.pos;
+bnd.tri = sourcemodel2d.tri;
+
+source_sim = zeros(8004,1);
+source_sim(neighbors) = sum(abs(fft(signal)));
+
+ft_plot_mesh(bnd, 'vertexcolor', source_sim);
+light;
+
+neighbors_1 = setdiff(find_neighbors_jhs(target, sourcemodel2d.tri,1),[3]);
+use_my_library('spm',0);
+use_my_library('ft',1);
+source_ori =(sourcemodel2d.pos(neighbors_1(1),:) - sourcemodel2d.pos(3,:))/norm(sourcemodel2d.pos(neighbors_1(1),:) - sourcemodel2d.pos(3,:));
+source_mom = [];
+sensor_signal = [];
+for i=1:147
+    signal = 10*sin(2*pi*10*t)+(rand(size(t))-0.5)*4;
+    current_mom(1,:) = source_ori(1).*signal;
+    current_mom(2,:) = source_ori(2).*signal;
+    current_mom(3,:) = source_ori(3).*signal;
+    source_mom{i} = current_mom;
+    chan_signal{i} = zeros(241,401);
+    for j = 1:length(neighbors)
+        chan_signal{i} = chan_signal{i} + leadfield.leadfield{neighbors(j)}*source_mom{i}; %% just sum of signal. Should I use L2-norm?
+    end
+end
+
+data_sim = data;
+data_sim.trial = chan_signal; %% Simulated channel data.
+
+cfg                   = [];
+cfg.method            = 'lcmv';
+cfg.grid              = leadfield;
+cfg.headmodel         = headmodel;
+cfg.lcmv.lambda = '10%';
+cfg.lcmv.fixedori = 'yes';
+cfg.lcmv.projectnoise = 'yes';
+cfg.lcmv.keepleadfield = 'yes';
+cfg.singletrial = 'yes'
+source_lcmv_sim = ft_sourceanalysis(cfg, data_sim);
+source_lcmv_sim = ft_sourcedescriptives([], source_lcmv_sim);
+
+source_lcmv_sim = source_lcmv_sim;
+source_lcmv_sim.avg.nai = 10.^(log10(source_lcmv_sim.avg.nai)-floor(log10(source_lcmv_sim.avg.nai)));
+
+% plot the neural activity index (power/noise)
+cfg               = [];
+cfg.method        = 'surface';
+cfg.funparameter  = 'nai';
+cfg.maskparameter = cfg.funparameter;
+cfg.funcolorlim   = 'auto'; % [0.0 8]
+cfg.opacitylim    = [3 8];
+cfg.opacitymap    = 'rampup';  
+cfg.funcolormap   = 'jet';
+cfg.colorbar      = 'yes';
+ft_sourceplot(cfg, source_lcmv_sim);
+
+%% Simulation with SPM
+use_my_library('ft',0);
+use_my_library('spm',1);
+D = spm_eeg_ft2spm(data, 'spm_HMM_MAR_test'); 
+
+%% Specify Forward Model
+% read the source and volume conduction model from current dir with
+% outputs of previous pipelines
+fid = fopen(fullfile('/projects1/HCPMEG/100307_MEG/100307_MEG_anatomy/100307/MEG/anatomy/100307_MEG_anatomy_transform.txt'), 'rt');
+strFid=fread(fid,[1 inf], '*char');
+eval(strFid);
+fclose(fid);
+fid = [];
+clear fid;
+strFid = [];
+clear strFid;
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% specify sourcemodel, headmodel, sensor and transform if it necessary
+sourcemodel2d=ft_convert_units(sourcemodel2d, 'mm');
+sourcemodelsubj = sourcemodel2d;
+headmodel = ft_convert_units(headmodel, 'cm');
+grad=data.grad;
+grad = ft_convert_units(grad, 'cm');
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Prepare the component data in order for ft_sourceanalysis to be able to
+% swallow it
+channels = data.label;
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% compute the forward solution
+
+job = [];
+job.vol = headmodel;
+job.grid = sourcemodelsubj;
+job.grad = grad;
+job.channel = channels;
+job.normalize = 'yes';
+job.reducerank = 2;
+
+val = []; tlck=[]; sourcemodelsubj = []; resultprefix = []; options = []; mixing = []; megpath = []; rmeg = []; mainpath = [];
+i = []; headmodel = []; grad = []; ft_default = []; experimentid = []; comp_class = []; channels = []; anaPath = [];
+clear val tlck sourcemodelsubj resultprefix options mixing megpath;
+clear rmeg mainpath i headmodel grad ft_default experimentid comp_class channels anaPath;
+
+% specify forward model (Bring forward model information 
+D.inv = [];
+D.inv{1}.forward = [];
+D.inv{1}.method='Imaging';
+D.inv{1}.forward.toMNI = transform.bti2spm;
+D.inv{1}.forward.fromMNI = transform.spm2bti;
+D.inv{1}.forward.voltype='Single Shell';
+D.inv{1}.forward.vol = ft_convert_units(job.vol,'m');
+D.inv{1}.forward.modality = 'MEG';
+D.inv{1}.forward.siunits=1;
+D.inv{1}.forward.mesh=[];
+D.inv{1}.forward.mesh_correction=[];
+D.inv{1}.forward.mesh.face = job.grid.tri;
+grid = ft_convert_units(job.grid,'m');
+D.inv{1}.forward.mesh.vert = grid.pos;
+D.inv{1}.forward.sensors = [];
+D.inv{1}.forward.sensors = ft_convert_units(job.grad,'m');
+D.inv{1}.mesh.tess_mni.face = D.inv{1}.forward.mesh.face;
+grid = ft_convert_units(job.grid,'mm');
+D.inv{1}.mesh.tess_mni.vert = spm_eeg_inv_transform_points(D.inv{1}.forward.toMNI,grid.pos); % tess_mni should have mni coordinate
+D.inv{1}.forward.toMNI = [D.inv{1}.forward.toMNI(:, 1:3)*1000 D.inv{1}.forward.toMNI(:,4)];
+D.inv{1}.forward.fromMNI = eye(4)/D.inv{1}.forward.toMNI
+D.inv{1}.datareg.modality = 'MEG';
+D.inv{1}.datareg.sensors = ft_convert_units(job.grad,'m');
+D.inv{1}.datareg.toMNI = D.inv{1}.forward.toMNI;
+D.inv{1}.datareg.fromMNI = D.inv{1}.forward.fromMNI;
+Datareg = []; grid = [];
+save(fullfile(D.path,D.fname),'D');
+clear Datareg grid job;
+% check meshes and co-registration
+% if config.showForwardResult; spm_eeg_inv_checkforward(D); end
+
+%% Simulation Code
+% specify job for spm_cfg_eeg_inv_simulate.m, function run_simulation(job)
+job = [];
+job.D = [];
+fname = strsplit(D.fname, '.');
+job.D{1} = fname{1};
+job.val = 1;
+job.prefix = 'sim_';
+job.whatconditions.all =1;
+job.isinversion.setsources.woi = [0 2000]; % Specify Time Window that source simulation starts and ends
+% job.isinversion.setsources.isSin.foi = [10 ; 20]; % Specify Sinusoid Frequency
+% job.isinversion.setsources.dipmom=[10 10; 10 5]; % Specify Dipole Moment
+% job.isinversion.setsources.locs = [53.7203 -25.7363 9.3949; -52.8484 -25.7363 9.3949]; % Specify Source Location
+job.isinversion.setsources.isSin.foi = 10;
+job.isinversion.setsources.dipmom=source_ori;
+job.isinversion.setsources.locs = sourcemodel2d.pos(3,:);
+% [-6 28 34; -6 -52 40; -46 -70 36 ;-48 -69 7; -39 -7 56; -28 52 19]; %ACC, PCC, LLP,
+% LV1, LMT, LFEF, L aPFC
+job.isSNR.setSNR = 0;
+
+%
+% Run Simulation
+% 
+% modified code of spm_cfg_eeg_inv_simulate.m
+%
+trialind=[];
+D.con = 1;
+if isfield(job.isSNR,'whitenoise'),
+    whitenoisefT=job.isSNR.whitenoise; %% internal units as femto Tesla
+    SNRdB=[];
+else
+    SNRdB=job.isSNR.setSNR;
+    whitenoisefT=[];
+end;
+
+if isfield(job.isinversion,'setsources'), %% defining individual sources (This block should be executed)
+    
+    %%%
+    Nsources=size(job.isinversion.setsources.locs,1)
+    
+    if (size(job.isinversion.setsources.dipmom,1)~=Nsources),
+        error('Number of locations must equal number of moments specified');
+    end;
+    
+    mnimesh=[]; %% using mesh defined in forward model at the moment
+    
+    
+    ormni=[]; %% dipoles will get orientations from cortical mesh
+    dipmom=job.isinversion.setsources.dipmom;
+    if size(job.isinversion.setsources.dipmom,2)==3, %% dipole moment has 3 dimension
+        disp('Simulating dipoles without reference to cortical surface');
+        for j=1:size(dipmom,1),
+            ormni(j,:)=dipmom(j,:)./sqrt(dot(dipmom(j,:),dipmom(j,:))); %% unit orientation in MNI space
+            nAmdipmom(j)=sqrt(dot(dipmom(j,:),dipmom(j,:))); % magnitude of dipole
+        end;
+    else %% only one moment parameter given
+        nAmdipmom=dipmom(:,1); %% total momnent in nAm
+        dipfwhm=[];
+        if size(dipmom,1)==2,
+            dipfwhm=dipmom(:,2); %% fhwm in mm
+        end;
+    end;
+    
+    woi=job.isinversion.setsources.woi./1000;
+    timeind = intersect(find(D{1}.time>woi(1)),find(D{1}.time<=woi(2)));
+    simsignal = zeros(Nsources,length(timeind));
+    
+    if isfield(job.isinversion.setsources.isSin,'fromfile'),
+        % Simulate orthogonal Gaussian signals
+        filename=cell2mat(job.isinversion.setsources.isSin.fromfile);
+        a=load(filename,'s');
+        
+        if size(a.s,1)~=Nsources,
+            error('size of simulated data in file does not match number of sources');
+        end;
+        
+        if size(a.s,2)~=length(timeind),
+            warning(sprintf('sim signal from file is not same length as time window (%d vs %d samples) truncating or padding with zeros',size(a.s,2),length(timeind)));
+        end;
+        usesamples=1:min(length(timeind),size(a.s,2));
+        simsignal(:,usesamples)=a.s(:,usesamples);
+        
+    end; % if isfield fband
+    
+    if isfield(job.isinversion.setsources.isSin,'fband'),
+        % Simulate orthogonal Gaussian signals
+        
+        simsignal=randn(Nsources,length(timeind));
+        % filter to bandwidth
+        simsignal=ft_preproc_lowpassfilter(simsignal,D{1}.fsample,job.isinversion.setsources.isSin.fband(2),2);
+        simsignal=ft_preproc_highpassfilter(simsignal,D{1}.fsample,job.isinversion.setsources.isSin.fband(1),2);
+        [u,s,v]=svd(simsignal*simsignal');
+        simsignal=u*simsignal; %% orthogonalise all signals
+    end; % if isfield fband
+    
+    %  simsignal=simsignal.*repmat(nAmdipmom,1,size(simsignal,2)); %% now scale by moment
+    
+    if isfield(job.isinversion.setsources.isSin,'foi'),
+        % simulate sinusoids
+        sinfreq=job.isinversion.setsources.isSin.foi;
+        % Create the waveform for each source
+        
+        for j=1:Nsources                % For each source
+            simsignal(j,:)=sin((D{1}.time(timeind)- D{1}.time(min(timeind)))*sinfreq(j)*2*pi);
+        end; % for j
+        
+        
+    end; %% if isfield foi
+    
+    simsignal=simsignal./repmat(std(simsignal'),size(simsignal,2),1)'; %% Set sim signal to have unit variance
+    %[D,meshsourceind,signal]=spm_eeg_simulate(D,job.prefix, job.isinversion.setsources.locs,simsignal,woi,whitenoisefT,SNRdB,trialind,mnimesh,SmthInit);
+    figure();
+    plot(D{1}.time(timeind),simsignal);
+    xlabel('time');
+    ylabel('Normalized amplitude (to be scaled by dip moment later)');
+    legend(num2str([1:Nsources]'));
+    [D,meshsourceind]=spm_eeg_simulate(D,job.prefix,job.isinversion.setsources.locs,simsignal,ormni,woi,whitenoisefT,SNRdB,trialind,mnimesh,dipfwhm,nAmdipmom);
+    
+else %% simulate sources based on inversion
+    if ~isfield(D{i}.inv{job.val},'inverse'),
+        error('There is no solution defined for these data at that index');
+    end;
+    
+    [D]=spm_eeg_simulate_frominv(D,job.prefix,job.val,whitenoisefT,SNRdB,trialind);
+end;
+
+
+
+if ~iscell(D)
+    D = {D};
+end
+
+for i = 1:numel(D)
+    save(D{i});
+end
+
+
+fullname=[D{1}.path filesep D{1}.fname];
+out.D = {fullname};
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+
+%% Invert SPM Example
+%  spm_cfg_eeg_inv_invert.m -> function run_inversion(job)
+%  Specify job
+%
+
+job = [];
+job.D = D; % D is cell type
+job.val = 1; %inversion index
+job.whatconditions.all = 1;
+% Specify Inverting Methods.
+% Use 'LOR', 'GS', 'IID', 'EEB' for Methods 'COH', 'MSP(GS)', 'IID', 'EBB'
+job.isstandard.custom.invtype='GS'; 
+job.isstandard.custom.woi = [0, 600];
+job.isstandard.custom.foi = [0, 40]; % simulated data has 10, 20 Hz sources, so 0 to 40 Hz is enough to cover source activity
+job.isstandard.custom.hanning = 1;
+job.isstandard.custom.priors.priorsmask{1} = '';
+job.isstandard.custom.priors.space = 1;
+job.isstandard.custom.restrict.locs = [];
+job.isstandard.custom.restrict.radius = 32;
+job.isstandard.custom.restrict.mask{1}='';
+job.modality{1} = 'All';
+
+
+target = 3;
+neighbors_1 = setdiff(find_neighbors_jhs(target, sourcemodel2d.tri,1),[3]);
+use_my_library('spm',0);
+use_my_library('ft',1);
+source_ori =(sourcemodel2d.pos(neighbors_1(1),:) - sourcemodel2d.pos(3,:))/norm(sourcemodel2d.pos(neighbors_1(1),:) - sourcemodel2d.pos(3,:));
+
+% Run Invert
+% spm_cfg_eeg_inv_invert code
+
+D = D{1};
+inverse = [];
+if isfield(job.whatconditions, 'condlabel')
+    inverse.trials = job.whatconditions.condlabel;
+end
+
+if isfield(job.isstandard, 'custom')
+    inverse.type = job.isstandard.custom.invtype;
+    inverse.woi  = fix([max(min(job.isstandard.custom.woi), 1000*D.time(1)) min(max(job.isstandard.custom.woi), 1000*D.time(end))]);
+    inverse.Han  = job.isstandard.custom.hanning;
+    inverse.lpf  =  fix(min(job.isstandard.custom.foi));
+    inverse.hpf  =  fix(max(job.isstandard.custom.foi));
+    
+    P = char(job.isstandard.custom.priors.priorsmask);
+    if ~isempty(P)        
+        [p,f,e] = fileparts(P);
+        switch lower(e)
+            case '.gii'
+                g = gifti(P);
+                inverse.pQ = cell(1,size(g.cdata,2));
+                for i=1:size(g.cdata,2)
+                    inverse.pQ{i} = double(g.cdata(:,i));
+                end
+            case '.mat'
+                load(P);
+                inverse.pQ = pQ;
+            case {'.img', '.nii'}
+                S.D = D;
+                S.fmri = P;
+                S.space = job.isstandard.custom.priors.space;
+                D = spm_eeg_inv_fmripriors(S);
+                inverse.fmri = D.inv{D.val}.inverse.fmri;
+                load(inverse.fmri.priors);
+                inverse.pQ = pQ;
+            otherwise
+                error('Unknown file type.');
+        end
+    end
+    
+    if ~isempty(job.isstandard.custom.restrict.locs)
+        inverse.xyz = job.isstandard.custom.restrict.locs;
+        inverse.rad = job.isstandard.custom.restrict.radius;
+    end
+    
+    P = char(job.isstandard.custom.restrict.mask);
+    if ~isempty(P)
+        inverse.mask = P;
+    end
+end
+
+[mod, list] = modality(D, 1, 1);
+if strcmp(job.modality{1}, 'All')
+    inverse.modality  = list;
+else
+    inverse.modality  = intersect(list, job.modality);
+end
+
+if numel(inverse.modality) == 1
+    inverse.modality = inverse.modality{1};
+end
+
+D = {};
+
+for i = 1:numel(job.D)
+    D{i} = spm_eeg_load(job.D{i});
+    
+    D{i}.val = job.val;
+    
+    D{i}.con = 1;
+    
+    if ~isfield(D{i}, 'inv')
+        error('Forward model is missing for subject %d.', i);
+    elseif  numel(D{i}.inv)<D{i}.val || ~isfield(D{i}.inv{D{i}.val}, 'forward')
+        if D{i}.val>1 && isfield(D{i}.inv{D{i}.val-1}, 'forward')
+            D{i}.inv{D{i}.val} = D{i}.inv{D{i}.val-1};
+            warning('Duplicating the last forward model for subject %d.', i);
+        else
+            error('Forward model is missing for subject %d.', i);
+        end
+    end
+    
+    D{i}.inv{D{i}.val}.inverse = inverse;
+end
+
+D = spm_eeg_invert(D);
+
+if ~iscell(D)
+    D = {D};
+end
+
+for i = 1:numel(D)
+    save(D{i});
+end
+
+
+
+
+
+
+
+
+
