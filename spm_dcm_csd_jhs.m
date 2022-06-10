@@ -128,7 +128,7 @@ DCM.M.n  = length(spm_vec(x));
 DCM.M.pE = pE;
 DCM.M.pC = pC;
 DCM.M.hE = 6;
-DCM.M.hC = 1/64;
+DCM.M.hC = 1/10240;%1/64;
 DCM.M.m  = Ns;
 
 % specify M.u - endogenous input (fluctuations) and intial states

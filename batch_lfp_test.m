@@ -1,8 +1,14 @@
 %% Load Raw data
-addpath('E:\my_code');
-dataDir = 'E:\MouseLFP\11mo\WT';
-workingDir = 'E:\LFP_Example\DCMs\Group';
-
+desktopname =  char(java.net.InetAddress.getLocalHost.getHostName);
+if strcmp (desktopname ,'LAPTOP-0E29AEK2')
+    addpath('E:\my_code');
+    dataDir = 'E:\MouseLFP\11mo\WT';
+    workingDir = 'E:\LFP_Example\DCMs\Group';
+else
+    warning('Unknown Environment! You should specify dataDir, workingDir by yourself.');
+    dataDir = '';
+    workingDir = '';
+end
 dataDirInfo = dir(dataDir);
 subject = [];
 for i=1:length(dataDirInfo)

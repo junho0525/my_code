@@ -1,3 +1,4 @@
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % HCP rMEG Intra-band Contrast spDCM (ERP model) Batch                    %
 %                                                                         %
@@ -12,10 +13,10 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Get Subject from HCP Dataset
 clear;
-addpath('/home/kuro/Codes/M_code/my_code'); % This is the directory where the ralated codes are located
+addpath('E:\my_code'); % This is the directory where the ralated codes are located
 use_my_library('spm',1);
-mPath='/projects1/HCPMEG'; % This is the directory of root of HCP dataset.
-workingDir = '/projects1/MEGResult'; % This is the directory that all result files will be placed.
+mPath='E:\HCPMEG'; % This is the directory of root of HCP dataset.
+workingDir = 'E:\MEGResult'; % This is the directory that all result files will be placed.
 megDirInfo = dir(mPath);
 subject = [];
 cd(mPath);
@@ -94,6 +95,7 @@ clear tempDirInfo subjDirInfo subDirInfo sessionNum i j k;
 cd(workingDir);
 restWorkingDir               = fullfile(workingDir, 'Restin');
 if ~isdir(restWorkingDir),mkdir(restWorkingDir);end
+subject = subject(12);
 dataset = cell(length(subject), 3, 2); % # of subjects x # of sessions x 2 datatype. One for spm MEEG data, another for fieldtrip data.
 cfg.savePath                 = restWorkingDir;
 %% Load and Do Preprocess

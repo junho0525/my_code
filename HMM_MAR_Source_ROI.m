@@ -195,7 +195,11 @@ use_my_library('ft',0);
 use_my_library('spm',1);
 cd('~/matlabwork/mnet_new/mnet0.92/labels/');
 load('monet_aal128.mat');
-aalmap = spm_vol('monet_aal128.nii');
+aalmap = spm_vol('monet_aal128.nii.gz');
+
+aalmap = gifti('monet_aal128.surf.gii')
+
+
 dim = aalmap.dim;
 toMNI = aalmap.mat;
 V = spm_read_vols(aalmap);

@@ -99,14 +99,15 @@ title('downsampled data powerspectrum');
 % Band pass filter (1, 200) Hz
 cfg = [];
 cfg.bpfilter ='yes';
+cfg.bpfilttype = 'fir';
 cfg.bpfreq = [0.5, 200]; %% must satisfy this condition ( freqmax*2 < fsample )
-databp = ft_preprocessing(cfg, datadown);
+databpfir = ft_preprocessing(cfg, datadown);
 
 subplot(4,2,5);
-plot(databp.time{1}, databp.trial{1});
+plot(databpfir.time{1}, databpfir.trial{1});
 title('Band pass filtered data timeseries (1-200 Hz)');
 subplot(4,2,6);
-plot((0:(80000-1))*(800/80000),abs(fft(databp.trial{1}(1,:))));
+plot((0:(80000-1))*(800/80000),abs(fft(databpfir.trial{1}(1,:))));
 title('Band pass filtered data powerspectrum');
 
 % Notch filter(60Hz, 120Hz, 180Hz)

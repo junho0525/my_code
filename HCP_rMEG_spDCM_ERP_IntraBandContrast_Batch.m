@@ -97,7 +97,7 @@ if ~isdir(restWorkingDir),mkdir(restWorkingDir);end
 dataset = cell(length(subject), 3, 2);
 cfg.savePath                 = restWorkingDir;
 %% Load and Do Preprocess
-cfg.freqband                 = [0.1, 40];
+cfg.freqband                 = [1, 80];
 cfg.downsample               = 200;
 
 for i = 1:length(subject)
